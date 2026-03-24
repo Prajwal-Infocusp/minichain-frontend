@@ -44,6 +44,54 @@ function useToast() {
   return useContext(ToastContext);
 }
 
+function CopyableAddress({ address, prefixLen = 8, suffixLen = 6 }) {
+  const { addToast } = useToast();
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(address);
+    addToast('Address copied to clipboard!', 'success');
+  };
+  
+  const display = address.length > prefixLen + suffixLen 
+    ? `${address.slice(0, prefixLen)}...${address.slice(-suffixLen)}`
+    : address;
+
+  return (
+    <span className="copyable-address" onClick={copyToClipboard} title="Click to copy">
+      {display}
+      <span className="copy-icon">⧉</span>
+    </span>
+  );
+}
+
+function InfoModal({ title, data, onClose }) {
+  const entries = Object.entries(data);
+  
+  return (
+    <div className="modal" onClick={onClose}>
+      <div className="modal-content modal-info" onClick={e => e.stopPropagation()}>
+        <h3>{title}</h3>
+        <div className="info-table">
+          {entries.map(([key, value]) => (
+            <div key={key} className="info-row">
+              <span className="info-key">{key.replace(/_/g, ' ')}</span>
+              <span className="info-value">
+                {typeof value === 'string' || typeof value === 'number' ? (
+                  <CopyableAddress address={String(value)} prefixLen={20} suffixLen={10} />
+                ) : Array.isArray(value) ? (
+                  value.length > 0 ? value.map((v, i) => (
+                    <div key={i} className="array-item"><CopyableAddress address={String(v)} /></div>
+                  )) : 'Empty'
+                ) : String(value)}
+              </span>
+            </div>
+          ))}
+        </div>
+        <button onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+}
+
 const API_BASE = import.meta.env.VITE_API_URL || 'https://minichain-gp90.onrender.com';
 
 const api = {
@@ -191,7 +239,7 @@ function Dashboard({ status, onRefresh }) {
         api.listAccounts({}),
         api.listMempool({}),
       ]);
-      setBlocks(blocksRes.data.data || []);
+      setBlocks((blocksRes.data.data || []).reverse());
       setAccounts(accountsRes.data.data || []);
       setMempool(mempoolRes.data.data || []);
     } catch (err) {
@@ -226,15 +274,15 @@ function Dashboard({ status, onRefresh }) {
         <div className="card">
           <h3>Recent Blocks</h3>
           {loading ? <p>Loading...</p> : (
-            <div className="list">
+            <div className="mini-list">
               {blocks.map(block => (
-                <div key={block.hash} className="list-item">
+                <div key={block.hash} className="mini-item">
                   <span className="block-height">#{block.height}</span>
-                  <span className="block-hash">{block.hash.slice(0, 12)}...</span>
-                  <span className="block-txs">{block.transactions.length} txs</span>
+                  <CopyableAddress address={block.hash} prefixLen={10} suffixLen={6} />
+                  <span className="tx-badge">{block.transactions.length} tx{block.transactions.length !== 1 ? 's' : ''}</span>
                 </div>
               ))}
-              {blocks.length === 0 && <p>No blocks yet</p>}
+              {blocks.length === 0 && <p className="empty-state">No blocks yet</p>}
             </div>
           )}
         </div>
@@ -242,14 +290,14 @@ function Dashboard({ status, onRefresh }) {
         <div className="card">
           <h3>Accounts</h3>
           {loading ? <p>Loading...</p> : (
-            <div className="list">
+            <div className="mini-list">
               {accounts.map(account => (
-                <div key={account.address} className="list-item">
+                <div key={account.address} className="mini-item">
                   <span className="account-name">{account.name}</span>
-                  <span className="account-address">{account.address.slice(0, 12)}...</span>
+                  <CopyableAddress address={account.address} prefixLen={10} suffixLen={6} />
                 </div>
               ))}
-              {accounts.length === 0 && <p>No accounts yet</p>}
+              {accounts.length === 0 && <p className="empty-state">No accounts yet</p>}
             </div>
           )}
         </div>
@@ -409,41 +457,30 @@ function Accounts() {
       <div className="card full-width">
         <h3>All Accounts</h3>
         {loading ? <p>Loading...</p> : (
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Address</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {accounts.map(account => (
-                <tr key={account.address}>
-                  <td>{account.name}</td>
-                  <td className="address">{account.address}</td>
-                  <td>
-                    <button onClick={() => handleGetInfo(account.address)}>Info</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="accounts-grid">
+            {accounts.map(account => (
+              <div key={account.address} className="account-card">
+                <div className="account-header">
+                  <span className="account-name">{account.name}</span>
+                  <span className="account-type">{account.name.startsWith('authority') ? '👑 Authority' : '👤 Account'}</span>
+                </div>
+                <div className="account-address-wrap">
+                  <CopyableAddress address={account.address} />
+                </div>
+                <button onClick={() => handleGetInfo(account.address)} className="sm-btn">View Details</button>
+              </div>
+            ))}
+            {accounts.length === 0 && <p>No accounts yet</p>}
+          </div>
         )}
       </div>
 
       {accountInfo && (
-        <div className="modal" onClick={() => setAccountInfo(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h3>Account Info</h3>
-            <p><strong>Address:</strong> {accountInfo.address}</p>
-            <p><strong>Balance:</strong> {accountInfo.balance}</p>
-            <p><strong>Nonce:</strong> {accountInfo.nonce}</p>
-            <p><strong>Is Contract:</strong> {accountInfo.is_contract ? 'Yes' : 'No'}</p>
-            {accountInfo.code_hash && <p><strong>Code Hash:</strong> {accountInfo.code_hash}</p>}
-            <button onClick={() => setAccountInfo(null)}>Close</button>
-          </div>
-        </div>
+        <InfoModal 
+          title="Account Info" 
+          data={accountInfo} 
+          onClose={() => setAccountInfo(null)} 
+        />
       )}
     </div>
   );
@@ -552,22 +589,44 @@ function Transactions() {
         </button>
       </div>
 
-      <div className="card">
-        <h3>Mempool ({mempool.length} pending)</h3>
-        <button onClick={handleClearMempool} className="secondary">Clear Mempool</button>
+      <div className="card full-width">
+        <div className="card-header">
+          <h3>Mempool ({mempool.length} pending)</h3>
+          <div className="header-actions">
+            <button onClick={loadMempool} className="icon-btn" title="Refresh">↻</button>
+            <button onClick={handleClearMempool} className="secondary sm-btn">Clear</button>
+          </div>
+        </div>
         
         {loading ? <p>Loading...</p> : (
-          <div className="list">
+          <div className="mempool-grid">
             {mempool.map(tx => (
-              <div key={tx.hash} className="list-item tx-item">
-                <div><strong>Hash:</strong> {tx.hash.slice(0, 16)}...</div>
-                <div><strong>From:</strong> {tx.from.slice(0, 12)}...</div>
-                <div><strong>To:</strong> {tx.to?.slice(0, 12)}...</div>
-                <div><strong>Value:</strong> {tx.value}</div>
-                <div><strong>Nonce:</strong> {tx.nonce}</div>
+              <div key={tx.hash} className="tx-card">
+                <div className="tx-header">
+                  <span className="tx-hash-label">TX</span>
+                  <CopyableAddress address={tx.hash} prefixLen={12} suffixLen={8} />
+                </div>
+                <div className="tx-details">
+                  <div className="tx-row">
+                    <span className="tx-label">From</span>
+                    <CopyableAddress address={tx.from} prefixLen={10} suffixLen={6} />
+                  </div>
+                  <div className="tx-row">
+                    <span className="tx-label">To</span>
+                    <CopyableAddress address={tx.to} prefixLen={10} suffixLen={6} />
+                  </div>
+                  <div className="tx-row">
+                    <span className="tx-label">Value</span>
+                    <span className="tx-value">{tx.value}</span>
+                  </div>
+                  <div className="tx-row">
+                    <span className="tx-label">Nonce</span>
+                    <span className="tx-nonce">{tx.nonce}</span>
+                  </div>
+                </div>
               </div>
             ))}
-            {mempool.length === 0 && <p>No pending transactions</p>}
+            {mempool.length === 0 && <p className="empty-state">No pending transactions</p>}
           </div>
         )}
       </div>
@@ -580,7 +639,6 @@ function Blocks() {
   const [loading, setLoading] = useState(true);
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [blockInfo, setBlockInfo] = useState(null);
-  const [count, setCount] = useState(10);
   
   const [authority, setAuthority] = useState('');
   const [accounts, setAccounts] = useState([]);
@@ -594,8 +652,8 @@ function Blocks() {
   const loadBlocks = async () => {
     setLoading(true);
     try {
-      const res = await api.listBlocks({ count });
-      setBlocks(res.data.data || []);
+      const res = await api.listBlocks({ count: 5 });
+      setBlocks((res.data.data || []).reverse());
     } catch (err) {
       addToast(err.message, 'error');
     } finally {
@@ -641,7 +699,7 @@ function Blocks() {
   return (
     <div className="blocks-page">
       <div className="card">
-        <h3>Produce Block (Authority Only)</h3>
+        <h3>Produce Block</h3>
         <div className="form-group">
           <label>Authority:</label>
           <select value={authority} onChange={(e) => setAuthority(e.target.value)}>
@@ -654,31 +712,27 @@ function Blocks() {
         <button onClick={handleProduceBlock} disabled={!authority}>Produce Block</button>
       </div>
 
-      <div className="card">
-        <h3>Recent Blocks</h3>
-        <div className="form-group">
-          <label>Number of blocks:</label>
-          <input 
-            type="number" 
-            value={count} 
-            onChange={(e) => setCount(parseInt(e.target.value))}
-            min={1}
-            max={100}
-          />
+      <div className="card full-width">
+        <div className="card-header">
+          <h3>Recent Blocks</h3>
+          <button onClick={loadBlocks} className="icon-btn" title="Refresh">↻</button>
         </div>
-        <button onClick={loadBlocks}>Refresh</button>
         
         {loading ? <p>Loading...</p> : (
-          <div className="list">
+          <div className="blocks-list">
             {blocks.map(block => (
               <div 
                 key={block.hash} 
-                className="list-item block-item"
+                className="block-card"
                 onClick={() => handleBlockClick(block.height.toString())}
               >
-                <span className="block-height">#{block.height}</span>
-                <span className="block-hash">{block.hash.slice(0, 20)}...</span>
-                <span className="block-txs">{block.transactions.length} txs</span>
+                <div className="block-main">
+                  <span className="block-height">#{block.height}</span>
+                  <CopyableAddress address={block.hash} />
+                </div>
+                <div className="block-meta">
+                  <span className="tx-count">{block.transactions.length} transactions</span>
+                </div>
               </div>
             ))}
             {blocks.length === 0 && <p>No blocks yet</p>}
@@ -687,22 +741,11 @@ function Blocks() {
       </div>
 
       {blockInfo && (
-        <div className="modal" onClick={() => setBlockInfo(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h3>Block #{blockInfo.height}</h3>
-            <p><strong>Hash:</strong> {blockInfo.hash}</p>
-            <p><strong>Parent Hash:</strong> {blockInfo.parent_hash.slice(0, 20)}...</p>
-            <p><strong>State Root:</strong> {blockInfo.state_root.slice(0, 20)}...</p>
-            <p><strong>Timestamp:</strong> {blockInfo.timestamp}</p>
-            <p><strong>Transactions:</strong> {blockInfo.transactions.length}</p>
-            <div className="tx-list">
-              {blockInfo.transactions.map((tx, i) => (
-                <div key={i} className="tx-hash">{tx.slice(0, 20)}...</div>
-              ))}
-            </div>
-            <button onClick={() => setBlockInfo(null)}>Close</button>
-          </div>
-        </div>
+        <InfoModal 
+          title={`Block #${blockInfo.height}`} 
+          data={blockInfo} 
+          onClose={() => setBlockInfo(null)} 
+        />
       )}
     </div>
   );
