@@ -1,6 +1,48 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, createContext, useContext, useCallback } from 'react';
 import axios from 'axios';
 import './App.css';
+
+const ToastContext = createContext(null);
+
+function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = useCallback((message, type = 'success') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  }, []);
+
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  return (
+    <ToastContext.Provider value={{ addToast }}>
+      {children}
+      <div className="toast-container">
+        {toasts.map(toast => (
+          <div 
+            key={toast.id} 
+            className={`toast toast-${toast.type}`}
+            onClick={() => removeToast(toast.id)}
+          >
+            <span className="toast-icon">
+              {toast.type === 'success' ? '✓' : '✕'}
+            </span>
+            <span className="toast-message">{toast.message}</span>
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
+function useToast() {
+  return useContext(ToastContext);
+}
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://minichain-gp90.onrender.com';
 
@@ -47,28 +89,30 @@ function App() {
   }
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1>Minichain Dashboard</h1>
-        <nav>
-          <button className={activeTab === 'dashboard' ? 'active' : ''} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
-          <button className={activeTab === 'accounts' ? 'active' : ''} onClick={() => setActiveTab('accounts')}>Accounts</button>
-          <button className={activeTab === 'transactions' ? 'active' : ''} onClick={() => setActiveTab('transactions')}>Transactions</button>
-          <button className={activeTab === 'blocks' ? 'active' : ''} onClick={() => setActiveTab('blocks')}>Blocks</button>
-          <button className={activeTab === 'contracts' ? 'active' : ''} onClick={() => setActiveTab('contracts')}>Contracts</button>
-        </nav>
-      </header>
+    <ToastProvider>
+      <div className="app">
+        <header className="header">
+          <h1>Minichain Dashboard</h1>
+          <nav>
+            <button className={activeTab === 'dashboard' ? 'active' : ''} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
+            <button className={activeTab === 'accounts' ? 'active' : ''} onClick={() => setActiveTab('accounts')}>Accounts</button>
+            <button className={activeTab === 'transactions' ? 'active' : ''} onClick={() => setActiveTab('transactions')}>Transactions</button>
+            <button className={activeTab === 'blocks' ? 'active' : ''} onClick={() => setActiveTab('blocks')}>Blocks</button>
+            <button className={activeTab === 'contracts' ? 'active' : ''} onClick={() => setActiveTab('contracts')}>Contracts</button>
+          </nav>
+        </header>
 
-      <main className="main">
-        {!status?.initialized && <InitBlockchain onInitialized={loadStatus} />}
-        
-        {activeTab === 'dashboard' && <Dashboard status={status} onRefresh={loadStatus} />}
-        {activeTab === 'accounts' && <Accounts />}
-        {activeTab === 'transactions' && <Transactions />}
-        {activeTab === 'blocks' && <Blocks />}
-        {activeTab === 'contracts' && <Contracts />}
-      </main>
-    </div>
+        <main className="main">
+          {!status?.initialized && <InitBlockchain onInitialized={loadStatus} />}
+          
+          {activeTab === 'dashboard' && <Dashboard status={status} onRefresh={loadStatus} />}
+          {activeTab === 'accounts' && <Accounts />}
+          {activeTab === 'transactions' && <Transactions />}
+          {activeTab === 'blocks' && <Blocks />}
+          {activeTab === 'contracts' && <Contracts />}
+        </main>
+      </div>
+    </ToastProvider>
   );
 }
 
@@ -76,23 +120,20 @@ function InitBlockchain({ onInitialized }) {
   const [authorities, setAuthorities] = useState(1);
   const [blockTime, setBlockTime] = useState(5);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
+  const { addToast } = useToast();
 
   const handleInit = async () => {
     setLoading(true);
-    setError(null);
-    setResult(null);
     try {
       const res = await api.init({ authorities, block_time: blockTime });
       if (res.data.success) {
-        setResult(res.data.data);
+        addToast('Blockchain initialized successfully!', 'success');
         onInitialized();
       } else {
-        setError(res.data.error);
+        addToast(res.data.error, 'error');
       }
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -128,9 +169,6 @@ function InitBlockchain({ onInitialized }) {
       <button onClick={handleInit} disabled={loading}>
         {loading ? 'Initializing...' : 'Initialize Blockchain'}
       </button>
-      
-      {result && <div className="success">{result}</div>}
-      {error && <div className="error">{error}</div>}
     </div>
   );
 }
@@ -225,7 +263,6 @@ function Dashboard({ status, onRefresh }) {
 function Accounts() {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [accountInfo, setAccountInfo] = useState(null);
   
@@ -235,7 +272,7 @@ function Accounts() {
   const [mintFrom, setMintFrom] = useState('');
   const [mintTo, setMintTo] = useState('');
   const [mintAmount, setMintAmount] = useState('');
-  const [mintResult, setMintResult] = useState(null);
+  const { addToast } = useToast();
 
   useEffect(() => {
     loadAccounts();
@@ -247,39 +284,37 @@ function Accounts() {
       const res = await api.listAccounts({});
       setAccounts(res.data.data || []);
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
     } finally {
       setLoading(false);
     }
   };
 
   const handleCreateAccount = async () => {
-    setError(null);
     try {
       const res = await api.newAccount({ name: newName || null });
       if (res.data.success) {
         setNewName('');
+        addToast('Account created successfully!', 'success');
         loadAccounts();
       } else {
-        setError(res.data.error);
+        addToast(res.data.error, 'error');
       }
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
     }
   };
 
   const handleGetBalance = async () => {
-    setError(null);
-    setBalance(null);
     try {
       const res = await api.getBalance({ address: balanceAddress });
       if (res.data.success) {
         setBalance(res.data.data);
       } else {
-        setError(res.data.error);
+        addToast(res.data.error, 'error');
       }
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
     }
   };
 
@@ -296,18 +331,16 @@ function Accounts() {
   };
 
   const handleMint = async () => {
-    setError(null);
-    setMintResult(null);
     try {
       const res = await api.mintTokens({ from: mintFrom, to: mintTo, amount: parseInt(mintAmount) });
       if (res.data.success) {
-        setMintResult(res.data.data);
         setMintAmount('');
+        addToast(`Minted tokens to ${mintTo}`, 'success');
       } else {
-        setError(res.data.error);
+        addToast(res.data.error, 'error');
       }
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
     }
   };
 
@@ -371,7 +404,6 @@ function Accounts() {
           />
         </div>
         <button onClick={handleMint} disabled={!mintFrom || !mintTo}>Mint</button>
-        {mintResult && <div className="success">{mintResult}</div>}
       </div>
 
       <div className="card full-width">
@@ -413,8 +445,6 @@ function Accounts() {
           </div>
         </div>
       )}
-
-      {error && <div className="error">{error}</div>}
     </div>
   );
 }
@@ -422,13 +452,12 @@ function Accounts() {
 function Transactions() {
   const [mempool, setMempool] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   
   const [fromAccount, setFromAccount] = useState('');
   const [toAddress, setToAddress] = useState('');
   const [amount, setAmount] = useState('');
   const [accounts, setAccounts] = useState([]);
-  const [sendResult, setSendResult] = useState(null);
+  const { addToast } = useToast();
 
   useEffect(() => {
     loadMempool();
@@ -441,7 +470,7 @@ function Transactions() {
       const res = await api.listMempool({});
       setMempool(res.data.data || []);
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -457,8 +486,6 @@ function Transactions() {
   };
 
   const handleSend = async () => {
-    setError(null);
-    setSendResult(null);
     try {
       const res = await api.sendTx({
         from: fromAccount,
@@ -466,27 +493,27 @@ function Transactions() {
         amount: parseInt(amount),
       });
       if (res.data.success) {
-        setSendResult(res.data.data);
+        addToast(`Transaction sent! Hash: ${res.data.data.slice(0, 16)}...`, 'success');
         loadMempool();
       } else {
-        setError(res.data.error);
+        addToast(res.data.error, 'error');
       }
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
     }
   };
 
   const handleClearMempool = async () => {
-    setError(null);
     try {
       const res = await api.clearMempool({});
       if (res.data.success) {
+        addToast('Mempool cleared successfully!', 'success');
         loadMempool();
       } else {
-        setError(res.data.error);
+        addToast(res.data.error, 'error');
       }
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
     }
   };
 
@@ -523,7 +550,6 @@ function Transactions() {
         <button onClick={handleSend} disabled={!fromAccount || !toAddress || !amount}>
           Send Transaction
         </button>
-        {sendResult && <div className="success">Transaction sent! Hash: {sendResult.slice(0, 16)}...</div>}
       </div>
 
       <div className="card">
@@ -545,8 +571,6 @@ function Transactions() {
           </div>
         )}
       </div>
-
-      {error && <div className="error">{error}</div>}
     </div>
   );
 }
@@ -554,14 +578,13 @@ function Transactions() {
 function Blocks() {
   const [blocks, setBlocks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [blockInfo, setBlockInfo] = useState(null);
   const [count, setCount] = useState(10);
   
   const [authority, setAuthority] = useState('');
-  const [produceResult, setProduceResult] = useState(null);
   const [accounts, setAccounts] = useState([]);
+  const { addToast } = useToast();
 
   useEffect(() => {
     loadBlocks();
@@ -574,7 +597,7 @@ function Blocks() {
       const res = await api.listBlocks({ count });
       setBlocks(res.data.data || []);
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -602,18 +625,16 @@ function Blocks() {
   };
 
   const handleProduceBlock = async () => {
-    setError(null);
-    setProduceResult(null);
     try {
       const res = await api.produceBlock({ authority });
       if (res.data.success) {
-        setProduceResult(res.data.data);
+        addToast(`Block produced successfully! Hash: ${res.data.data.slice(0, 16)}...`, 'success');
         loadBlocks();
       } else {
-        setError(res.data.error);
+        addToast(res.data.error, 'error');
       }
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
     }
   };
 
@@ -631,7 +652,6 @@ function Blocks() {
           </select>
         </div>
         <button onClick={handleProduceBlock} disabled={!authority}>Produce Block</button>
-        {produceResult && <div className="success">{produceResult}</div>}
       </div>
 
       <div className="card">
@@ -684,26 +704,22 @@ function Blocks() {
           </div>
         </div>
       )}
-
-      {error && <div className="error">{error}</div>}
     </div>
   );
 }
 
 function Contracts() {
-  const [error, setError] = useState(null);
   const [deployFrom, setDeployFrom] = useState('');
   const [deploySource, setDeploySource] = useState('');
   const [deployGasLimit, setDeployGasLimit] = useState(100000);
-  const [deployResult, setDeployResult] = useState(null);
   
   const [callFrom, setCallFrom] = useState('');
   const [callTo, setCallTo] = useState('');
   const [callData, setCallData] = useState('');
   const [callAmount, setCallAmount] = useState(0);
-  const [callResult, setCallResult] = useState(null);
   
   const [accounts, setAccounts] = useState([]);
+  const { addToast } = useToast();
 
   useEffect(() => {
     loadAccounts();
@@ -719,8 +735,6 @@ function Contracts() {
   };
 
   const handleDeploy = async () => {
-    setError(null);
-    setDeployResult(null);
     try {
       const res = await api.deployContract({
         from: deployFrom,
@@ -728,18 +742,16 @@ function Contracts() {
         gas_limit: parseInt(deployGasLimit),
       });
       if (res.data.success) {
-        setDeployResult(res.data.data);
+        addToast(`Contract deployed! Hash: ${res.data.data.slice(0, 16)}...`, 'success');
       } else {
-        setError(res.data.error);
+        addToast(res.data.error, 'error');
       }
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
     }
   };
 
   const handleCall = async () => {
-    setError(null);
-    setCallResult(null);
     try {
       const res = await api.callContract({
         from: callFrom,
@@ -748,12 +760,12 @@ function Contracts() {
         amount: parseInt(callAmount),
       });
       if (res.data.success) {
-        setCallResult(res.data.data);
+        addToast(`Contract called! Hash: ${res.data.data.slice(0, 16)}...`, 'success');
       } else {
-        setError(res.data.error);
+        addToast(res.data.error, 'error');
       }
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
     }
   };
 
@@ -788,7 +800,6 @@ function Contracts() {
           />
         </div>
         <button onClick={handleDeploy} disabled={!deployFrom || !deploySource}>Deploy</button>
-        {deployResult && <div className="success">{deployResult}</div>}
       </div>
 
       <div className="card">
@@ -829,10 +840,7 @@ function Contracts() {
           />
         </div>
         <button onClick={handleCall} disabled={!callFrom || !callTo}>Call</button>
-        {callResult && <div className="success">Transaction: {callResult.slice(0, 16)}...</div>}
       </div>
-
-      {error && <div className="error">{error}</div>}
     </div>
   );
 }
